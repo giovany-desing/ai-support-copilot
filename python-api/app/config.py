@@ -4,9 +4,9 @@ Maneja variables de entorno y settings globales
 """
 
 from pydantic_settings import BaseSettings
-from pydantic import Field, field_validator
+from pydantic import Field, model_validator, computed_field
 from functools import lru_cache
-from typing import List
+from typing import List, Any
 import json
 
 
@@ -34,57 +34,67 @@ class Settings(BaseSettings):
 
     # API Configuration
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = Field(default=8000, description="Puerto de la API. En Render, usar variable PORT")
 
-    # CORS
-    cors_origins: List[str] = Field(
-        default=["*"],
-        description="Lista de orígenes permitidos para CORS. Puede ser JSON string o lista."
+    # CORS - Campo como str para evitar parsing automático de JSON por Pydantic
+    # Se convierte a List[str] mediante la propiedad cors_origins
+    cors_origins_raw: str = Field(
+        default="*",
+        description="Orígenes CORS (string). Se convierte automáticamente a lista."
     )
 
     # Logging
     log_level: str = "INFO"
 
-    @field_validator("cors_origins", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def parse_cors_origins(cls, v):
+    def map_env_vars(cls, data: Any) -> Any:
         """
-        Validador para cors_origins que maneja:
-        - Listas ya parseadas
-        - Strings JSON
-        - Strings vacíos o None (retorna ["*"])
-        - Strings simples separados por comas
+        Mapea variables de entorno específicas antes del parsing
         """
-        if v is None:
+        if isinstance(data, dict):
+            # Mapear CORS_ORIGINS (mayúsculas) a cors_origins_raw
+            if "CORS_ORIGINS" in data:
+                data["cors_origins_raw"] = data.pop("CORS_ORIGINS")
+            
+            # Mapear PORT (de Render) a api_port si no está definido
+            if "PORT" in data and "api_port" not in data:
+                try:
+                    data["api_port"] = int(data["PORT"])
+                except (ValueError, TypeError):
+                    pass  # Si PORT no es un número válido, usar default
+        
+        return data
+
+    @property
+    def cors_origins(self) -> List[str]:
+        """
+        Propiedad que convierte cors_origins_raw (str) a List[str]
+        Maneja diferentes formatos: JSON array, string separado por comas, o string simple
+        """
+        cors_value = getattr(self, "cors_origins_raw", "*")
+        
+        if cors_value is None or (isinstance(cors_value, str) and not cors_value.strip()):
             return ["*"]
         
-        # Si ya es una lista, retornarla
-        if isinstance(v, list):
-            return v
+        if isinstance(cors_value, list):
+            return cors_value
         
-        # Si es string, intentar parsearlo
-        if isinstance(v, str):
-            # Si está vacío, retornar default
-            if not v.strip():
-                return ["*"]
-            
+        if isinstance(cors_value, str):
             # Intentar parsear como JSON
             try:
-                parsed = json.loads(v)
+                parsed = json.loads(cors_value)
                 if isinstance(parsed, list):
                     return parsed
-                # Si es un string simple, convertirlo a lista
                 return [parsed] if isinstance(parsed, str) else [str(parsed)]
             except (json.JSONDecodeError, ValueError):
                 # Si no es JSON válido, tratar como string simple o separado por comas
-                if "," in v:
-                    # Separar por comas y limpiar espacios
-                    return [origin.strip() for origin in v.split(",") if origin.strip()]
+                if "," in cors_value:
+                    origins = [origin.strip() for origin in cors_value.split(",") if origin.strip()]
+                    return origins if origins else ["*"]
                 else:
-                    # String simple
-                    return [v.strip()]
+                    return [cors_value.strip()]
         
-        # Fallback
         return ["*"]
 
     class Config:
