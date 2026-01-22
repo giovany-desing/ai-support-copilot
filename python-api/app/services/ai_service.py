@@ -49,8 +49,14 @@ class AIService:
     def _init_sentiment_model(self):
         """
         Inicializar modelo de Transformers para análisis de sentimiento
-        Usa: cardiffnlp/twitter-xlm-roberta-base-sentiment
+        En producción, usa LLM en lugar de Transformers para ahorrar memoria
         """
+        # En producción (Render/Railway con <1GB RAM), skipear Transformers
+        if settings.environment == "production":
+            logger.info("🌐 Modo producción: Usando LLM para sentiment (ahorro de RAM)")
+            self.sentiment_pipeline = None
+            return
+
         try:
             logger.info(f"📦 Cargando modelo de sentimiento: {settings.sentiment_model}")
 
@@ -64,17 +70,8 @@ class AIService:
 
         except Exception as e:
             logger.error(f"❌ Error cargando modelo de sentimiento: {str(e)}")
-            # Fallback: usar modelo más simple si falla
-            logger.warning("⚠️ Intentando con modelo de respaldo...")
-            try:
-                self.sentiment_pipeline = pipeline(
-                    "sentiment-analysis",
-                    model="distilbert-base-uncased-finetuned-sst-2-english"
-                )
-                logger.info("✅ Modelo de respaldo cargado")
-            except Exception as e2:
-                logger.error(f"❌ Error crítico cargando modelos: {str(e2)}")
-                raise
+            logger.warning("⚠️ Usando LLM como fallback para sentiment")
+            self.sentiment_pipeline = None
 
     def _init_llm_model(self):
         """
@@ -138,10 +135,9 @@ class AIService:
     # ============================================
     # ANÁLISIS DE SENTIMIENTO (Transformers)
     # ============================================
-
     def analyze_sentiment(self, text: str) -> Dict[str, Any]:
         """
-        Analizar sentimiento usando Transformers
+        Analizar sentimiento usando Transformers (local) o LLM (producción)
 
         Args:
             text: Texto a analizar
@@ -149,21 +145,23 @@ class AIService:
         Returns:
             Dict con sentiment, confidence y reasoning
         """
+        # Si no hay Transformers cargado (producción), usar LLM
+        if self.sentiment_pipeline is None:
+            return self._analyze_sentiment_with_llm(text)
+
+        # Usar Transformers (desarrollo local)
         try:
-            logger.info("😊 Analizando sentimiento...")
+            logger.info("😊 Analizando sentimiento con Transformers...")
             start_time = time.time()
 
             # Ejecutar pipeline de sentiment
             result = self.sentiment_pipeline(text[:512])  # Limitar a 512 chars
 
             # Procesar resultado
-            # El modelo puede retornar diferentes formatos, normalizamos aquí
             if isinstance(result, list) and len(result) > 0:
                 if isinstance(result[0], list):
-                    # Formato: [[{label, score}, {label, score}, ...]]
                     sentiments = result[0]
                 else:
-                    # Formato: [{label, score}]
                     sentiments = result
             else:
                 sentiments = result
@@ -209,12 +207,71 @@ class AIService:
             return result_dict
 
         except Exception as e:
-            logger.error(f"❌ Error en análisis de sentimiento: {str(e)}")
-            # Fallback: retornar neutral con baja confianza
+            logger.error(f"❌ Error en análisis de sentimiento con Transformers: {str(e)}")
+            # Fallback a LLM
+            return self._analyze_sentiment_with_llm(text)
+
+    def _analyze_sentiment_with_llm(self, text: str) -> Dict[str, Any]:
+        """
+        Analizar sentimiento usando LLM (para producción con memoria limitada)
+        """
+        try:
+            logger.info("😊 Analizando sentimiento con LLM...")
+            start_time = time.time()
+
+            # Crear prompt para análisis de sentimiento
+            sentiment_prompt = ChatPromptTemplate.from_messages([
+                ("system", """Eres un experto en análisis de sentimiento.
+
+    Analiza el siguiente texto y determina el sentimiento:
+    - Positivo: Cliente satisfecho, contento, agradecido
+    - Neutral: Cliente informativo, sin emoción clara
+    - Negativo: Cliente frustrado, enojado, insatisfecho
+
+    Responde SOLO en JSON."""),
+                ("user", """Texto: "{text}"
+
+    Responde en formato JSON:
+    {{
+    "sentiment": "Positivo" o "Neutral" o "Negativo",
+    "reasoning": "breve explicación",
+    "confidence": 0.0-1.0
+    }}""")
+            ])
+
+            # Ejecutar LLM
+            chain = sentiment_prompt | self.llm
+            response = chain.invoke({"text": text})
+
+            # Parsear respuesta
+            content = response.content
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                result = json.loads(json_str)
+            else:
+                result = json.loads(content)
+
+            elapsed_time = int((time.time() - start_time) * 1000)
+
+            result_dict = {
+                "sentiment": result.get("sentiment", "Neutral"),
+                "confidence": float(result.get("confidence", 0.75)),
+                "reasoning": result.get("reasoning", "Análisis con LLM"),
+                "processing_time_ms": elapsed_time,
+                "model": "llm-sentiment"
+            }
+
+            logger.info(f"✅ Sentimiento (LLM): {result_dict['sentiment']} - {elapsed_time}ms")
+            return result_dict
+
+        except Exception as e:
+            logger.error(f"❌ Error en sentiment con LLM: {str(e)}")
+            # Último fallback
             return {
                 "sentiment": "Neutral",
                 "confidence": 0.5,
-                "reasoning": "No se pudo determinar el sentimiento con precisión",
+                "reasoning": "No se pudo determinar con precisión",
                 "processing_time_ms": 0,
                 "model": "fallback"
             }
