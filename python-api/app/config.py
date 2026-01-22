@@ -4,7 +4,10 @@ Maneja variables de entorno y settings globales
 """
 
 from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator
 from functools import lru_cache
+from typing import List
+import json
 
 
 class Settings(BaseSettings):
@@ -34,10 +37,55 @@ class Settings(BaseSettings):
     api_port: int = 8000
 
     # CORS
-    cors_origins: list = ["*"]  # En producción, especificar dominios exactos
+    cors_origins: List[str] = Field(
+        default=["*"],
+        description="Lista de orígenes permitidos para CORS. Puede ser JSON string o lista."
+    )
 
     # Logging
     log_level: str = "INFO"
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """
+        Validador para cors_origins que maneja:
+        - Listas ya parseadas
+        - Strings JSON
+        - Strings vacíos o None (retorna ["*"])
+        - Strings simples separados por comas
+        """
+        if v is None:
+            return ["*"]
+        
+        # Si ya es una lista, retornarla
+        if isinstance(v, list):
+            return v
+        
+        # Si es string, intentar parsearlo
+        if isinstance(v, str):
+            # Si está vacío, retornar default
+            if not v.strip():
+                return ["*"]
+            
+            # Intentar parsear como JSON
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+                # Si es un string simple, convertirlo a lista
+                return [parsed] if isinstance(parsed, str) else [str(parsed)]
+            except (json.JSONDecodeError, ValueError):
+                # Si no es JSON válido, tratar como string simple o separado por comas
+                if "," in v:
+                    # Separar por comas y limpiar espacios
+                    return [origin.strip() for origin in v.split(",") if origin.strip()]
+                else:
+                    # String simple
+                    return [v.strip()]
+        
+        # Fallback
+        return ["*"]
 
     class Config:
         env_file = ".env"
