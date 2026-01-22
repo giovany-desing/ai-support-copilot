@@ -1,0 +1,52 @@
+# ============================================
+# AI Support Co-Pilot - Python Dependencies
+# ============================================
+
+# ============================================
+# FRAMEWORK WEB
+# ============================================
+fastapi
+uvicorn[standard]
+python-multipart
+
+# ============================================
+# VALIDACIÓN Y CONFIGURACIÓN
+# ============================================
+pydantic
+pydantic-settings
+python-dotenv
+
+# ============================================
+# DATABASE - SUPABASE
+# ============================================
+supabase
+postgrest
+
+# ============================================
+# AI/ML - TRANSFORMERS
+# ============================================
+transformers
+torch
+sentencepiece
+protobuf
+
+# ============================================
+# AI/ML - LANGCHAIN + GROQ
+# ============================================
+langchain
+langchain-core
+langchain-groq
+groq
+
+# ============================================
+# UTILIDADES
+# ============================================
+requests
+httpx
+
+# ============================================
+# DESARROLLO (Opcional - para tests)
+# ============================================
+pytest
+pytest-cov
+pytest-asyncio
