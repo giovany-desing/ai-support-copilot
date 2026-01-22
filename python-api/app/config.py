@@ -3,7 +3,7 @@ Configuración centralizada de la aplicación
 Maneja variables de entorno y settings globales
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator, computed_field
 from functools import lru_cache
 from typing import List, Any
@@ -57,6 +57,10 @@ class Settings(BaseSettings):
             if "CORS_ORIGINS" in data:
                 data["cors_origins_raw"] = data.pop("CORS_ORIGINS")
             
+            # También mapear cors_origins (minúsculas) si existe
+            if "cors_origins" in data:
+                data["cors_origins_raw"] = data.pop("cors_origins")
+            
             # Mapear PORT (de Render) a api_port si no está definido
             if "PORT" in data and "api_port" not in data:
                 try:
@@ -97,9 +101,11 @@ class Settings(BaseSettings):
         
         return ["*"]
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore"  # Ignorar campos extra (como cors_origins que es solo una propiedad)
+    )
 
 
 @lru_cache()

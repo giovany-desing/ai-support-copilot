@@ -1,5 +1,6 @@
 # ============================================
 # AI Support Co-Pilot - Python Dependencies
+# Versión optimizada (solo LLM, sin Transformers)
 # ============================================
 
 # ============================================
@@ -23,15 +24,7 @@ supabase
 postgrest
 
 # ============================================
-# AI/ML - TRANSFORMERS
-# ============================================
-transformers
-torch
-sentencepiece
-protobuf
-
-# ============================================
-# AI/ML - LANGCHAIN + GROQ
+# AI/ML - LANGCHAIN + GROQ (Solo LLM)
 # ============================================
 langchain
 langchain-core
@@ -45,7 +38,7 @@ requests
 httpx
 
 # ============================================
-# DESARROLLO (Opcional - para tests)
+# DESARROLLO (Testing)
 # ============================================
 pytest
 pytest-cov
