@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import type { Ticket } from '../types'
-import type { RealtimeChannel } from '@supabase/supabase-js'
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 interface UseTicketsReturn {
   tickets: Ticket[]
@@ -59,7 +59,7 @@ export const useTickets = (): UseTicketsReturn => {
           schema: 'public',
           table: 'tickets',
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Ticket>) => {
           console.log('📡 Realtime event:', payload.eventType, payload)
 
           switch (payload.eventType) {
@@ -82,13 +82,13 @@ export const useTickets = (): UseTicketsReturn => {
             case 'DELETE':
               // Eliminar ticket
               setTickets((prev) =>
-                prev.filter((ticket) => ticket.id !== payload.old.id)
+                prev.filter((ticket) => ticket.id !== (payload.old as Ticket).id)
               )
               break
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         console.log('📡 Realtime subscription status:', status)
       })
 
